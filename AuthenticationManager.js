@@ -9,7 +9,10 @@ const {
     InvalidPasswordError
 } = require('./AuthenticationErrors')
 const util = require('util')
-const ldap = require('ldapjs')
+
+const { Client } = require('ldapts');
+
+
 
 const BCRYPT_ROUNDS = Settings.security.bcryptRounds || 12
 const BCRYPT_MINOR_VERSION = Settings.security.bcryptMinorVersion || 'a'
@@ -90,26 +93,26 @@ const AuthenticationManager = {
             return callback(error)
         }
         //check for domain
-        //console.log("check for domain")
-        if (query.email != adminMail && query.email.split('@')[1] != domain) {
+        console.log("check for domain")
+        //if (query.email != adminMail && query.email.split('@')[1] != domain) {
             //console.log("wrong domain")
             //console.log(query.email.split('@')[1])
-            return callback(null, null)
-        }
+        //    return callback(null, null)
+        //}
         //check for local admin user
         if (user && user.hashedPassword) {
-            //console.log("existing user: login event")
+            console.log("existing user: login event")
             if (user.email == adminMail) {
-                //console.log("admin user: login event")
+                console.log("admin user: login event")
                 bcrypt.compare(password, user.hashedPassword, function (error, match) {
                     if (error) {
                         return callback(error)
                     }
                     if (!match) {
-                        //console.log("admin pass does not match")
+                        console.log("admin pass does not match")
                         return callback(null, null)
                     }
-                    //console.log("admin user logged in")
+                    console.log("admin user logged in")
                     AuthenticationManager.login(user, password, callback)
                 })
                 return null
@@ -280,57 +283,45 @@ const AuthenticationManager = {
         return true
     },
 
-    ldapAuth(query, passwd, onSuccess, callback, adminMail, userObj) {
-        const client = ldap.createClient({
-            url: process.env.LDAP_SERVER
+    async ldapAuth(query, passwd, onSuccess, callback, adminMail, userObj) {
+        const client = new Client({
+	       url: process.env.LDAP_SERVER,
         });
         const bindDn = process.env.LDAP_BIND_DN
         const bindPassword = process.env.LDAP_BIND_PW
-        client.bind(bindDn, bindPassword, function (err) {
-            if (err == null) {
-                const opts = {
-                    filter: '(&(objectClass=posixAccount)(uid=' + query.email.split('@')[0] + '))',
-                    scope: 'sub',
-                    attributes: ['dn']
-                };
 
-                client.search('ou=Personen,dc=uni-greifswald,dc=de,dc=TLD', opts, function (err, res) {
-                    if (err) {
-                        return callback(null, null)
-                    }
-                    res.on('searchEntry', function (entry) {
-                        userDn = entry.objectName
-                        client.bind(userDn, passwd, function (err) {
-                            if (err == null) {
-                                //console.log("ldap positive")
-                                onSuccess(query, adminMail, userObj, callback)
-                                client.unbind()
-                                return null
-                            } else {
-                                //console.log("ldap negative")
-                                client.unbind()
-                                return callback(null, null)
-                            }
-                        })
-                    })
-                    res.on('error', err => {
-                        console.error('error: ' + err.message);
-                        client.unbind()
-                        return callback(null, null)
-                    });
-                    res.on('end', result => {
-                        //if nothing written (user not found)
-                        if(result.connection._writableState.writing == false){
-                            client.unbind()
-                            return callback(null, null)
-                        }
-                    });
-                });
-
-            } else {
-                return callback(null, null)
-            }
-        })
+        isFound = true;
+	try {
+	  await client.bind(bindDn, bindPassword);
+          const {searchEntries,searchReferences,} = await client.search(process.env.LDAP_BIND_BASE, {scope: 'sub',filter: '(&(objectClass=inetOrgPerson)(uid=' + query.email.split('@')[0] + '))',});
+	} catch (ex) {
+		isFound = false;
+		throw ex;
+	} finally {
+		await client.unbind();
+	}
+	if ( isFound == 'false' ) {
+          console.log("ldap negative")
+          return callback(null, null)
+	}
+	userDn = 'uid=' + query.email.split('@')[0] + ',' + process.env.LDAP_BIND_BASE;
+        let isAuthenticated;
+        try {   
+                await client.bind(userDn,passwd);
+                isAuthenticated = true;
+        } catch (ex) {
+                isAuthenticated = false;
+        } finally {
+                await client.unbind();
+        }
+        if (isAuthenticated == true) {
+          console.log("ldap positive")
+          onSuccess(query, adminMail, userObj, callback)
+          return null
+        } else {
+          console.log("ldap negative")
+          return callback(null, null)
+        }
     }
 }
 
