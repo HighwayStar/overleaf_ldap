@@ -50,13 +50,15 @@ const AuthenticationManager = {
         )
     },
 
-    createIfNotExistAndLogin(query, adminMail, ldapMail, user, callback) {
+    createIfNotExistAndLogin(query, adminMail, ldapData, user, callback) {
         if (query.email != adminMail & (!user || !user.hashedPassword)) {
             //create random pass for local userdb, does not get checked for ldap users during login
             let pass = require("crypto").randomBytes(32).toString("hex")
             const userRegHand = require('../User/UserRegistrationHandler.js')
             userRegHand.registerNewUser({
-                    email: ldapMail,
+                    email: ldapData['email'],
+                    last_name: ldapData['last_name'],
+                    first_name: ldapData['first_name'],
                     password: pass
                 },
                 function (error, user) {
@@ -67,7 +69,7 @@ const AuthenticationManager = {
 //		    user.emails[0].confirmedAt = Date.now()
 //	            user.save()
                     console.log("user %s added to local library", query.email)
-                    User.findOne({email: ldapMail, }, (error, user) => {
+                    User.findOne({email: ldapData['email'], }, (error, user) => {
                             if (error) {
                                 return callback(error)
                             }
@@ -294,7 +296,10 @@ const AuthenticationManager = {
 		await client.bind(userDn, passwd);
 		const {searchEntries,searchReferences,} = await client.search(process.env.LDAP_BIND_BASE, { scope: 'sub',filter: '(uid=' + query.email + ')',},);
 		isAuthenticated = true;
-		ldapMail = searchEntries[0]['mail'];
+		ldapData = { email: searchEntries[0]['mail'],
+				last_name: searchEntries[0]['sn'],
+				first_name: searchEntries[0]['givenName'],
+			};
 	} catch (ex) {
                 isAuthenticated = false;
 		return callback(null,null);
@@ -304,7 +309,7 @@ const AuthenticationManager = {
 	}
         if (isAuthenticated == true) {
           console.log("ldap positive")
-          onSuccess(query, adminMail, ldapMail, userObj, callback)
+          onSuccess(query, adminMail, ldapData, userObj, callback)
           return null
         } else {
           console.log("ldap negative")
