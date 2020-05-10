@@ -7,3 +7,4 @@ RUN cd /var/www/sharelatex \
 && npm install ldapts
 
 COPY AuthenticationManager.js /var/www/sharelatex/web/app/src/Features/Authentication/
+COPY login.pug /var/www/sharelatex/web/app/views/user/

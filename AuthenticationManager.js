@@ -50,24 +50,24 @@ const AuthenticationManager = {
         )
     },
 
-    createIfNotExistAndLogin(query, adminMail, user, callback) {
+    createIfNotExistAndLogin(query, adminMail, ldapMail, user, callback) {
         if (query.email != adminMail & (!user || !user.hashedPassword)) {
             //create random pass for local userdb, does not get checked for ldap users during login
             let pass = require("crypto").randomBytes(32).toString("hex")
             const userRegHand = require('../User/UserRegistrationHandler.js')
             userRegHand.registerNewUser({
-                    email: query.email,
+                    email: ldapMail,
                     password: pass
                 },
                 function (error, user) {
-                    if (error) {
+                    if (error && error.message != "EmailAlreadyRegistered") {
                         callback(error)
                     }
-                    user.admin = false
-		    user.emails[0].confirmedAt = Date.now()
-	            user.save()
+//                    user.isAdmin = false
+//		    user.emails[0].confirmedAt = Date.now()
+//	            user.save()
                     console.log("user %s added to local library", query.email)
-                    User.findOne(query, (error, user) => {
+                    User.findOne({email: ldapMail, }, (error, user) => {
                             if (error) {
                                 return callback(error)
                             }
@@ -287,36 +287,24 @@ const AuthenticationManager = {
         const client = new Client({
 	       url: process.env.LDAP_SERVER,
         });
-        const bindDn = process.env.LDAP_BIND_DN
-        const bindPassword = process.env.LDAP_BIND_PW
 
-        isFound = true;
+	userDn = 'uid=' + query.email + ',' + process.env.LDAP_BIND_BASE;
+        let isAuthenticated;
 	try {
-	  await client.bind(bindDn, bindPassword);
-          const {searchEntries,searchReferences,} = await client.search(process.env.LDAP_BIND_BASE, {scope: 'sub',filter: '(&(objectClass=inetOrgPerson)(uid=' + query.email.split('@')[0] + '))',});
+		await client.bind(userDn, passwd);
+		const {searchEntries,searchReferences,} = await client.search(process.env.LDAP_BIND_BASE, { scope: 'sub',filter: '(uid=' + query.email + ')',},);
+		isAuthenticated = true;
+		ldapMail = searchEntries[0]['mail'];
 	} catch (ex) {
-		isFound = false;
-		throw ex;
+                isAuthenticated = false;
+		return callback(null,null);
+//		throw ex;
 	} finally {
 		await client.unbind();
 	}
-	if ( isFound == 'false' ) {
-          console.log("ldap negative")
-          return callback(null, null)
-	}
-	userDn = 'uid=' + query.email.split('@')[0] + ',' + process.env.LDAP_BIND_BASE;
-        let isAuthenticated;
-        try {   
-                await client.bind(userDn,passwd);
-                isAuthenticated = true;
-        } catch (ex) {
-                isAuthenticated = false;
-        } finally {
-                await client.unbind();
-        }
         if (isAuthenticated == true) {
           console.log("ldap positive")
-          onSuccess(query, adminMail, userObj, callback)
+          onSuccess(query, adminMail, ldapMail, userObj, callback)
           return null
         } else {
           console.log("ldap negative")
