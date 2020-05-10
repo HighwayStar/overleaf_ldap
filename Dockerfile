@@ -1,9 +1,9 @@
 FROM sharelatex/sharelatex:latest
 LABEL maintainer="github.com/worksasintended"
-RUN npm install ldapjs
-#overwrite  AuthenticationManager.js
-RUN npm install -g npm
-RUN npm install ldapts-search
-RUN npm install ldapts
-RUN tlmgr install scheme-full
+RUN cd /var/www/sharelatex \
+&& npm install ldapjs \
+&& npm install -g npm \
+&& npm install ldapts-search \
+&& npm install ldapts
+
 COPY AuthenticationManager.js /var/www/sharelatex/web/app/src/Features/Authentication/
